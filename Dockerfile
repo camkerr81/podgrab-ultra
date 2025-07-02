@@ -25,6 +25,7 @@ ENV PID=100
 ENV GIN_MODE=release
 VOLUME ["/config", "/assets"]
 RUN apk update && apk add ca-certificates && rm -rf /var/cache/apk/*
+RUN apk add --no-cache python3 py3-pip && pip3 install eyeD3 --break-system-packages
 RUN mkdir -p /config; \
     mkdir -p /assets; \
     mkdir -p /api

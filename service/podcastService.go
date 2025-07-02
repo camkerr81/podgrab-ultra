@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
@@ -35,7 +36,7 @@ func ParseOpml(content string) (model.OpmlModel, error) {
 	return response, err
 }
 
-//FetchURL is
+// FetchURL is
 func FetchURL(url string) (model.PodcastData, []byte, error) {
 	body, err := makeQuery(url)
 	if err != nil {
@@ -534,6 +535,14 @@ func DownloadMissingEpisodes() error {
 		go func(item db.PodcastItem, setting db.Setting) {
 			defer wg.Done()
 			url, _ := Download(item.FileURL, item.Title, item.Podcast.Title, GetPodcastPrefix(&item, &setting))
+			if setting.EnableMp3Tagging {
+				trackID, err := db.GetEpisodeNumber(item.ID, item.PodcastID)
+				if err != nil {
+					fmt.Println("Error getting episode number:", err)
+					return
+				}
+				RunPostDownloadScript(url, item.Podcast.Title, trackID)
+			}
 			SetPodcastItemAsDownloaded(item.ID, url)
 		}(item, *setting)
 
@@ -606,6 +615,20 @@ func DownloadSingleEpisode(podcastItemId string) error {
 		fmt.Println(err.Error())
 		return err
 	}
+
+	// Run the post-download script to tag ID3 metadata
+	if setting.EnableMp3Tagging {
+		trackID, err := db.GetEpisodeNumber(podcastItem.ID, podcastItem.PodcastID)
+		if err != nil {
+			fmt.Println("Error getting episode number:", err)
+			return err
+		}
+
+		if err := RunPostDownloadScript(url, podcastItem.Podcast.Title, trackID); err != nil {
+			Logger.Warnf("ID3 tagging failed for %s: %v", url, err)
+		}
+	}
+
 	err = SetPodcastItemAsDownloaded(podcastItem.ID, url)
 
 	if setting.DownloadEpisodeImages {
@@ -764,7 +787,7 @@ func GetSearchFromPodcastIndex(pod *podcastindex.Podcast) *model.CommonSearchRes
 
 func UpdateSettings(downloadOnAdd bool, initialDownloadCount int, autoDownload bool,
 	appendDateToFileName bool, appendEpisodeNumberToFileName bool, darkMode bool, downloadEpisodeImages bool,
-	generateNFOFile bool, dontDownloadDeletedFromDisk bool, baseUrl string, maxDownloadConcurrency int, userAgent string) error {
+	generateNFOFile bool, enableMp3Tagging bool, dontDownloadDeletedFromDisk bool, baseUrl string, maxDownloadConcurrency int, userAgent string) error {
 	setting := db.GetOrCreateSetting()
 
 	setting.AutoDownload = autoDownload
@@ -775,6 +798,7 @@ func UpdateSettings(downloadOnAdd bool, initialDownloadCount int, autoDownload b
 	setting.DarkMode = darkMode
 	setting.DownloadEpisodeImages = downloadEpisodeImages
 	setting.GenerateNFOFile = generateNFOFile
+	setting.EnableMp3Tagging = enableMp3Tagging
 	setting.DontDownloadDeletedFromDisk = dontDownloadDeletedFromDisk
 	setting.BaseUrl = baseUrl
 	setting.MaxDownloadConcurrency = maxDownloadConcurrency
@@ -814,4 +838,16 @@ func TogglePodcastPause(id string, isPaused bool) error {
 	}
 
 	return db.TogglePodcastPauseStatus(id, isPaused)
+}
+
+// RunPostDownloadScript runs the post-download script to tag ID3 metadata using eyeD3
+func RunPostDownloadScript(filePath string, podcastTitle string, track int) error {
+	cmd := exec.Command("eyeD3", "--artist", podcastTitle, "--track", strconv.Itoa(track), filePath)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		Logger.Errorf("Post-download script failed: %v, output: %s", err, string(output))
+		return err
+	}
+	Logger.Infof("Post-download script output: %s", string(output))
+	return nil
 }

@@ -33,6 +33,7 @@ type SettingModel struct {
 	BaseUrl                       string `form:"baseUrl" json:"baseUrl" query:"baseUrl"`
 	MaxDownloadConcurrency        int    `form:"maxDownloadConcurrency" json:"maxDownloadConcurrency" query:"maxDownloadConcurrency"`
 	UserAgent                     string `form:"userAgent" json:"userAgent" query:"userAgent"`
+	EnableMp3Tagging              bool   `form:"enableMp3Tagging" json:"enableMp3Tagging" query:"enableMp3Tagging"`
 }
 
 var searchOptions = map[string]string{
