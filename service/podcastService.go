@@ -541,7 +541,14 @@ func DownloadMissingEpisodes() error {
 					fmt.Println("Error getting episode number:", err)
 					return
 				}
-				RunPostDownloadScript(url, item.Podcast.Title, trackID)
+				coverArt := item.LocalImage
+				if coverArt == "" {
+					// Download image and reload item
+					downloadImageLocally(item.ID)
+					updatedItem := GetPodcastItemById(item.ID)
+					coverArt = updatedItem.LocalImage
+				}
+				RunPostDownloadScript(url, item.Podcast.Title, trackID, coverArt)
 			}
 			SetPodcastItemAsDownloaded(item.ID, url)
 		}(item, *setting)
@@ -623,8 +630,14 @@ func DownloadSingleEpisode(podcastItemId string) error {
 			fmt.Println("Error getting episode number:", err)
 			return err
 		}
-
-		if err := RunPostDownloadScript(url, podcastItem.Podcast.Title, trackID); err != nil {
+		coverArt := podcastItem.LocalImage
+		if coverArt == "" {
+			// Download image and reload item
+			downloadImageLocally(podcastItem.ID)
+			updatedItem := GetPodcastItemById(podcastItem.ID)
+			coverArt = updatedItem.LocalImage
+		}
+		if err := RunPostDownloadScript(url, podcastItem.Podcast.Title, trackID, coverArt); err != nil {
 			Logger.Warnf("ID3 tagging failed for %s: %v", url, err)
 		}
 	}
@@ -841,8 +854,9 @@ func TogglePodcastPause(id string, isPaused bool) error {
 }
 
 // RunPostDownloadScript runs the post-download script to tag ID3 metadata using eyeD3
-func RunPostDownloadScript(filePath string, podcastTitle string, track int) error {
-	cmd := exec.Command("eyeD3", "--artist", podcastTitle, "--track", strconv.Itoa(track), filePath)
+func RunPostDownloadScript(filePath string, podcastTitle string, track int, coverArt string) error {
+	fmt.Println("Setting Artist=" + podcastTitle + ", Track=" + strconv.Itoa(track) + ", CoverArt=" + coverArt)
+	cmd := exec.Command("eyeD3", "--artist", podcastTitle, "--track", strconv.Itoa(track), "--add-image", coverArt+":FRONT_COVER", filePath)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		Logger.Errorf("Post-download script failed: %v, output: %s", err, string(output))
